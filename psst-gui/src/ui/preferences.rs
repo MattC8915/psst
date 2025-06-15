@@ -567,7 +567,7 @@ impl Authenticate {
         data.preferences.auth.result.defer_default();
 
         // Generate auth URL and store PKCE verifier
-        let (auth_url, pkce_verifier) = oauth::generate_auth_url(8888);
+        let (auth_url, pkce_verifier) = oauth::generate_auth_url(7777);
         let config = data.preferences.auth.session_config(); // Keep config local
 
         // Spawn authentication thread
@@ -576,13 +576,13 @@ impl Authenticate {
             move || {
                 // Listen for authorization code
                 let code = oauth::get_authcode_listener(
-                    SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8888),
+                    SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 7777),
                     Duration::from_secs(300),
                 )
                 .map_err(|e| e.to_string())?;
 
                 // Exchange code for access token
-                let token = oauth::exchange_code_for_token(8888, code, pkce_verifier);
+                let token = oauth::exchange_code_for_token(7777, code, pkce_verifier);
 
                 // Try to authenticate with token, with retries
                 let mut retries = 3;
