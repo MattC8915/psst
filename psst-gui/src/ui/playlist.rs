@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::{cmp::Ordering, sync::Arc};
 
-use druid::widget::{Button, LensWrap, TextBox};
+use druid::widget::{Button, LensWrap, TextBox, ViewSwitcher};
 use druid::UnitPoint;
 use druid::{
     im::Vector,
@@ -24,10 +24,12 @@ use crate::{
     },
     error::Error,
     webapi::WebApi,
-    widget::{Async, MyWidgetExt, RemoteImage},
+    widget::{Async, MyWidgetExt, RemoteImage, icons, Empty},
 };
 
 use super::{playable, theme, track, utils};
+
+use crate::controller::OnCommand;
 
 pub const LOAD_LIST: Selector = Selector::new("app.playlist.load-list");
 pub const LOAD_DETAIL: Selector<(PlaylistLink, AppState)> =
@@ -43,6 +45,10 @@ pub const UNFOLLOW_PLAYLIST_CONFIRM: Selector<PlaylistLink> =
 pub const RENAME_PLAYLIST: Selector<PlaylistLink> = Selector::new("app.playlist.rename");
 pub const RENAME_PLAYLIST_CONFIRM: Selector<PlaylistLink> =
     Selector::new("app.playlist.rename-confirm");
+
+pub const FAVORITE_PLAYLIST: Selector<PlaylistLink> = Selector::new("app.playlist.favorite");
+pub const UNFAVORITE_PLAYLIST: Selector<PlaylistLink> = Selector::new("app.playlist.unfavorite");
+pub const REFRESH_FAVORITES: Selector = Selector::new("app.playlist.refresh-favorites");
 
 const SHOW_RENAME_PLAYLIST_CONFIRM: Selector<PlaylistLink> =
     Selector::new("app.playlist.show-rename");
@@ -82,7 +88,31 @@ pub fn list_widget() -> impl Widget<AppState> {
         LOAD_LIST,
         |_| WebApi::global().get_playlists(),
         |_, data, d| data.with_library_mut(|l| l.playlists.defer(d)),
-        |_, data, r| data.with_library_mut(|l| l.playlists.update(r)),
+        |_, data, r| {
+            let (_, r) = r;
+            // Extract favorite IDs before mutable borrow
+            let favorite_ids: Vec<_> = data.config.get_favorite_playlists().iter().cloned().collect();
+            data.with_library_mut(|l| {
+                match r {
+                    Ok(mut playlists) => {
+                        for playlist in playlists.iter_mut() {
+                            playlist.is_favorite = favorite_ids.iter().any(|id| id == &playlist.id);
+                        }
+                        playlists.sort_by(|a, b| {
+                            match (a.is_favorite, b.is_favorite) {
+                                (true, false) => std::cmp::Ordering::Less,
+                                (false, true) => std::cmp::Ordering::Greater,
+                                _ => a.name.cmp(&b.name),
+                            }
+                        });
+                        l.playlists.update(((), Ok(playlists)));
+                    }
+                    Err(e) => {
+                        l.playlists.update(((), Err(e)));
+                    }
+                }
+            });
+        },
     )
     .on_command_async(
         ADD_TRACK,
@@ -152,20 +182,41 @@ pub fn list_widget() -> impl Widget<AppState> {
     })
     .on_command_async(
         REMOVE_TRACK,
-        |d| WebApi::global().remove_track_from_playlist(&d.link.id, d.track_pos),
+        |d| {
+            WebApi::global().remove_track_from_playlist(&d.link.id, d.track_pos)
+        },
         |_, data, d| {
             data.with_library_mut(|library| library.decrement_playlist_track_count(&d.link))
         },
-        |e, data, (p, r)| {
+        |_, data, (_, r)| {
             if let Err(err) = r {
                 data.error_alert(err);
             } else {
                 data.info_alert("Removed from playlist.");
             }
-            // Re-submit the `LOAD_DETAIL` command to reload the playlist data.
-            e.submit_command(LOAD_DETAIL.with((p.link, data.clone())))
         },
     )
+    .on_command_async(
+        REFRESH_FAVORITES,
+        |_| {
+            let config = crate::data::Config::load().unwrap_or_default();
+            let favorite_ids: Vec<Arc<str>> = config.get_favorite_playlists().iter().cloned().collect();
+            WebApi::global().refresh_favorite_playlists(&favorite_ids)
+        },
+        |_, data, _| {
+            // No defer action needed
+        },
+        |_, data, r| {
+            let (_, r) = r;
+            if let Err(err) = r {
+                data.error_alert(err);
+            }
+        },
+    )
+    .controller(OnCommand::new(REFRESH_FAVORITES, |ctx, _, data| {
+        // Refresh favorites every 30 minutes
+        ctx.request_timer(std::time::Duration::from_secs(30 * 60));
+    }))
 }
 
 fn unfollow_confirm_window(msg: UnfollowPlaylist) -> WindowDesc<AppState> {
@@ -338,6 +389,22 @@ pub fn playlist_widget(horizontal: bool) -> impl Widget<WithCtx<Playlist>> {
         .with_text_size(theme::TEXT_SIZE_SMALL)
         .lens(Ctx::data().then(Playlist::description));
 
+    // Add star icon for favorites
+    let favorite_star = ViewSwitcher::new(
+        |playlist: &Playlist, _| playlist.is_favorite,
+        |is_favorite, _, _| {
+            if *is_favorite {
+                icons::HEART
+                    .scale(theme::ICON_SIZE_SMALL)
+                    .with_color(theme::ICON_COLOR)
+                    .boxed()
+            } else {
+                Box::new(Empty)
+            }
+        },
+    )
+    .lens(Ctx::data());
+
     let (playlist_name, playlist_description) = if horizontal {
         (
             playlist_name.fix_width(playlist_image_size).align_left(),
@@ -358,7 +425,12 @@ pub fn playlist_widget(horizontal: bool) -> impl Widget<WithCtx<Playlist>> {
             .with_default_spacer()
             .with_child(
                 Flex::column()
-                    .with_child(playlist_name)
+                    .with_child(
+                        Flex::row()
+                            .with_child(playlist_name)
+                            .with_default_spacer()
+                            .with_child(favorite_star)
+                    )
                     .with_spacer(2.0)
                     .with_child(playlist_description)
                     .align_horizontal(UnitPoint::CENTER)
@@ -372,7 +444,12 @@ pub fn playlist_widget(horizontal: bool) -> impl Widget<WithCtx<Playlist>> {
             .with_default_spacer()
             .with_flex_child(
                 Flex::column()
-                    .with_child(playlist_name)
+                    .with_child(
+                        Flex::row()
+                            .with_child(playlist_name)
+                            .with_default_spacer()
+                            .with_child(favorite_star)
+                    )
                     .with_spacer(2.0)
                     .with_child(playlist_description),
                 1.0,
@@ -491,6 +568,25 @@ fn playlist_menu_ctx(playlist: &WithCtx<Playlist>) -> Menu<AppState> {
         )
         .command(cmd::COPY.with(playlist.url())),
     );
+
+    // Add favorite/unfavorite menu items
+    if playlist.is_favorite {
+        menu = menu.entry(
+            MenuItem::new(
+                LocalizedString::new("menu-unfavorite-playlist")
+                    .with_placeholder("Remove from Favorites"),
+            )
+            .command(UNFAVORITE_PLAYLIST.with(playlist.link())),
+        );
+    } else {
+        menu = menu.entry(
+            MenuItem::new(
+                LocalizedString::new("menu-favorite-playlist")
+                    .with_placeholder("Add to Favorites"),
+            )
+            .command(FAVORITE_PLAYLIST.with(playlist.link())),
+        );
+    }
 
     if library.contains_playlist(playlist) {
         let created_by_user = library.is_created_by_user(playlist);

@@ -1,14 +1,15 @@
 use std::{
-    env::{self, VarError},
+    env,
     fs::{self, File, OpenOptions},
     io::{BufReader, BufWriter},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 #[cfg(target_family = "unix")]
 use std::os::unix::fs::OpenOptionsExt;
 
-use druid::{Data, Lens, Size};
+use druid::{Data, Lens, Size, im::Vector};
 use platform_dirs::AppDirs;
 use psst_core::{
     cache::{mkdir_if_not_exists, CacheHandle},
@@ -126,6 +127,7 @@ pub struct Config {
     pub lastfm_api_key: Option<String>,
     pub lastfm_api_secret: Option<String>,
     pub lastfm_enable: bool,
+    pub favorite_playlists: Vector<Arc<str>>,
 }
 
 impl Default for Config {
@@ -148,6 +150,7 @@ impl Default for Config {
             lastfm_api_key: None,
             lastfm_api_secret: None,
             lastfm_enable: false,
+            favorite_playlists: Default::default(),
         }
     }
 }
@@ -239,16 +242,27 @@ impl Config {
     }
 
     pub fn proxy() -> Option<String> {
-        env::var(PROXY_ENV_VAR).map_or_else(
-            |err| match err {
-                VarError::NotPresent => None,
-                VarError::NotUnicode(_) => {
-                    log::error!("proxy URL is not a valid unicode");
-                    None
-                }
-            },
-            Some,
-        )
+        env::var(PROXY_ENV_VAR).ok()
+    }
+
+    pub fn add_favorite_playlist(&mut self, playlist_id: Arc<str>) {
+        if !self.favorite_playlists.contains(&playlist_id) {
+            self.favorite_playlists.push_back(playlist_id);
+            self.save();
+        }
+    }
+
+    pub fn remove_favorite_playlist(&mut self, playlist_id: &str) {
+        self.favorite_playlists.retain(|id| id.as_ref() != playlist_id);
+        self.save();
+    }
+
+    pub fn is_favorite_playlist(&self, playlist_id: &str) -> bool {
+        self.favorite_playlists.iter().any(|id| id.as_ref() == playlist_id)
+    }
+
+    pub fn get_favorite_playlists(&self) -> &Vector<Arc<str>> {
+        &self.favorite_playlists
     }
 }
 

@@ -8,6 +8,7 @@ use threadpool::ThreadPool;
 
 use crate::ui::playlist::{
     RENAME_PLAYLIST, RENAME_PLAYLIST_CONFIRM, UNFOLLOW_PLAYLIST, UNFOLLOW_PLAYLIST_CONFIRM,
+    FAVORITE_PLAYLIST, UNFAVORITE_PLAYLIST,
 };
 use crate::ui::theme;
 use crate::ui::DOWNLOAD_ARTWORK;
@@ -187,6 +188,20 @@ impl AppDelegate<AppState> for Delegate {
             Handled::Yes
         } else if let Some(link) = cmd.get(RENAME_PLAYLIST_CONFIRM) {
             ctx.submit_command(RENAME_PLAYLIST.with(link.clone()));
+            Handled::Yes
+        } else if let Some(link) = cmd.get(FAVORITE_PLAYLIST) {
+            data.config.add_favorite_playlist(link.id.clone());
+            data.with_library_mut(|library| {
+                library.update_playlist_favorite_status(&link.id, true);
+            });
+            data.info_alert("Added to favorites.");
+            Handled::Yes
+        } else if let Some(link) = cmd.get(UNFAVORITE_PLAYLIST) {
+            data.config.remove_favorite_playlist(&link.id);
+            data.with_library_mut(|library| {
+                library.update_playlist_favorite_status(&link.id, false);
+            });
+            data.info_alert("Removed from favorites.");
             Handled::Yes
         } else if cmd.is(cmd::QUIT_APP_WITH_SAVE) {
             ctx.submit_command(commands::QUIT_APP);

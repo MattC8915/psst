@@ -543,6 +543,7 @@ impl WebApi {
                                     ),
                                 },
                                 collaborative: false,
+                                is_favorite: false,
                             });
                         }
                         DataTypename::Artist => artist.push_back(Artist {
@@ -696,6 +697,28 @@ impl WebApi {
     /// Clear all Web API cache
     pub fn clear_web_api_cache(&self) -> Result<(), std::io::Error> {
         self.cache.clear_all()
+    }
+
+    /// Refresh favorite playlists by fetching their latest data
+    pub fn refresh_favorite_playlists(&self, favorite_ids: &[Arc<str>]) -> Result<(), Error> {
+        for playlist_id in favorite_ids {
+            // Refresh playlist metadata
+            if let Ok(playlist) = self.get_playlist(playlist_id) {
+                // Cache the updated playlist data
+                if let Ok(json) = serde_json::to_vec(&playlist) {
+                    self.cache.set("playlist", playlist_id, &json);
+                }
+            }
+
+            // Refresh playlist tracks
+            if let Ok(tracks) = self.get_playlist_tracks(playlist_id) {
+                // Cache the updated tracks data
+                if let Ok(json) = serde_json::to_vec(&tracks) {
+                    self.cache.set("playlist-tracks", playlist_id, &json);
+                }
+            }
+        }
+        Ok(())
     }
 }
 

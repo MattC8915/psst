@@ -476,10 +476,61 @@ impl Library {
     }
 
     pub fn decrement_playlist_track_count(&mut self, link: &PlaylistLink) {
-        if let Some(saved) = self.playlists.resolved_mut() {
-            if let Some(playlist) = saved.iter_mut().find(|p| p.id == link.id) {
-                playlist.track_count = playlist.track_count.map(|count| count.saturating_sub(1));
+        if let Some(playlists) = self.playlists.resolved() {
+            if let Some(playlist) = playlists.iter().find(|p| p.id == link.id) {
+                if let Some(count) = playlist.track_count {
+                    if count > 0 {
+                        let updated_playlists: Vector<Playlist> = playlists
+                            .iter()
+                            .map(|p| {
+                                if p.id == link.id {
+                                    Playlist {
+                                        track_count: Some(count - 1),
+                                        ..p.clone()
+                                    }
+                                } else {
+                                    p.clone()
+                                }
+                            })
+                            .collect();
+                        self.playlists.update(((), Ok(updated_playlists)));
+                    }
+                }
             }
+        }
+    }
+
+    pub fn get_sorted_playlists(&self) -> Option<Vector<Playlist>> {
+        self.playlists.resolved().map(|playlists| {
+            let mut sorted: Vector<Playlist> = playlists.clone();
+            sorted.sort_by(|a, b| {
+                // Favorites first, then by name
+                match (a.is_favorite, b.is_favorite) {
+                    (true, false) => std::cmp::Ordering::Less,
+                    (false, true) => std::cmp::Ordering::Greater,
+                    _ => a.name.cmp(&b.name),
+                }
+            });
+            sorted
+        })
+    }
+
+    pub fn update_playlist_favorite_status(&mut self, playlist_id: &str, is_favorite: bool) {
+        if let Some(playlists) = self.playlists.resolved() {
+            let updated_playlists: Vector<Playlist> = playlists
+                .iter()
+                .map(|p| {
+                    if p.id.as_ref() == playlist_id {
+                        Playlist {
+                            is_favorite,
+                            ..p.clone()
+                        }
+                    } else {
+                        p.clone()
+                    }
+                })
+                .collect();
+            self.playlists.update(((), Ok(updated_playlists)));
         }
     }
 }
