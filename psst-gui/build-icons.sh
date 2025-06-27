@@ -54,6 +54,6 @@ done
 iconutil -c icns "$ICONSET_DIR" -o assets/logo.icns
 
 # Cleanup
-rm -r "$ICON_DIR"
+#rm -r "$ICON_DIR"
 
 echo "Icon generation complete. ICNS file size: $(du -h assets/logo.icns | cut -f1)"

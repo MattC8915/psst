@@ -15,7 +15,7 @@ pub struct ShowDetail {
     pub episodes: Promise<ShowEpisodes, ShowLink>,
 }
 
-#[derive(Clone, Data, Lens, Deserialize)]
+#[derive(Clone, Data, Lens, Deserialize, Serialize)]
 pub struct Show {
     pub id: Arc<str>,
     pub name: Arc<str>,
@@ -55,7 +55,7 @@ impl ShowLink {
     }
 }
 
-#[derive(Clone, Debug, Data, Lens, Deserialize)]
+#[derive(Clone, Debug, Data, Lens, Deserialize, Serialize)]
 pub struct Episode {
     pub id: EpisodeId,
     pub name: Arc<str>,
@@ -65,8 +65,10 @@ pub struct Episode {
     pub languages: Vector<Arc<str>>,
     #[serde(rename = "duration_ms")]
     #[serde(deserialize_with = "super::utils::deserialize_millis")]
+    #[serde(serialize_with = "super::utils::serialize_millis")]
     pub duration: Duration,
     #[serde(deserialize_with = "super::utils::deserialize_date_option")]
+    #[serde(serialize_with = "super::utils::serialize_date_option")]
     #[data(same_fn = "PartialEq::eq")]
     pub release_date: Option<Date>,
     #[data(same_fn = "PartialEq::eq")]
@@ -101,11 +103,12 @@ pub struct EpisodeLink {
     pub name: Arc<str>,
 }
 
-#[derive(Clone, Debug, Data, Lens, Deserialize)]
+#[derive(Clone, Debug, Data, Lens, Deserialize, Serialize)]
 pub struct ResumePoint {
     pub fully_played: bool,
     #[serde(rename = "resume_position_ms")]
     #[serde(deserialize_with = "super::utils::deserialize_millis")]
+    #[serde(serialize_with = "super::utils::serialize_millis")]
     pub resume_position: Duration,
 }
 

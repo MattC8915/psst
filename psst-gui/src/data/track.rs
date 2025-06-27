@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::data::{AlbumLink, ArtistLink};
 
+#[derive(serde::Serialize)]
 #[derive(Clone, Debug, Data, Lens, Deserialize)]
 pub struct Track {
     #[serde(default)]
@@ -16,6 +17,7 @@ pub struct Track {
     pub artists: Vector<ArtistLink>,
     #[serde(rename = "duration_ms")]
     #[serde(deserialize_with = "super::utils::deserialize_millis")]
+    #[serde(serialize_with = "super::utils::serialize_millis")]
     pub duration: Duration,
     pub disc_number: usize,
     pub track_number: usize,
@@ -110,12 +112,12 @@ impl From<TrackId> for String {
     }
 }
 
-#[derive(Clone, Data, Debug, Deserialize)]
+#[derive(Clone, Data, Debug, Deserialize, Serialize)]
 pub struct AudioAnalysis {
     pub segments: Vector<AudioSegment>,
 }
 
-#[derive(Clone, Data, Debug, Deserialize)]
+#[derive(Clone, Data, Debug, Deserialize, Serialize)]
 pub struct AudioSegment {
     #[serde(flatten)]
     pub interval: TimeInterval,
@@ -124,11 +126,13 @@ pub struct AudioSegment {
     pub loudness_max_time: f64,
 }
 
-#[derive(Clone, Data, Debug, Deserialize)]
+#[derive(Clone, Data, Debug, Deserialize, Serialize)]
 pub struct TimeInterval {
     #[serde(deserialize_with = "super::utils::deserialize_secs")]
+    #[serde(serialize_with = "super::utils::serialize_secs")]
     pub start: Duration,
     #[serde(deserialize_with = "super::utils::deserialize_secs")]
+    #[serde(serialize_with = "super::utils::serialize_secs")]
     pub duration: Duration,
     pub confidence: f64,
 }

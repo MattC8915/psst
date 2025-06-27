@@ -18,7 +18,7 @@ use itertools::Itertools;
 use log::info;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use serde::{de::DeserializeOwned, Deserialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::json;
 
 use psst_core::session::{access_token::TokenProvider, SessionService};
@@ -660,6 +660,43 @@ impl WebApi {
     pub fn global() -> Arc<Self> {
         GLOBAL_WEBAPI.get().unwrap().clone()
     }
+
+    /// Clear cache entries for a specific playlist
+    pub fn clear_playlist_cache(&self, playlist_id: &str) {
+        self.cache.set("playlist", playlist_id, &[]);
+        self.cache.set("playlist-tracks", playlist_id, &[]);
+    }
+
+    /// Clear cache entries for a specific artist
+    pub fn clear_artist_cache(&self, artist_id: &str) {
+        self.cache.set("artist", artist_id, &[]);
+        self.cache.set("artist-albums", artist_id, &[]);
+        self.cache.set("artist-top-tracks", artist_id, &[]);
+        self.cache.set("related-artists", artist_id, &[]);
+        self.cache.set("artist-info", artist_id, &[]);
+    }
+
+    /// Clear cache entries for a specific track
+    pub fn clear_track_cache(&self, track_id: &str) {
+        self.cache.set("track", track_id, &[]);
+    }
+
+    /// Clear user-specific cache entries
+    pub fn clear_user_cache(&self) {
+        self.cache.set("saved-tracks", "user", &[]);
+        self.cache.set("user-top-tracks", "user", &[]);
+        self.cache.set("playlists", "user", &[]);
+    }
+
+    /// Get cache statistics
+    pub fn get_cache_stats(&self) -> crate::webapi::cache::CacheStats {
+        self.cache.get_stats()
+    }
+
+    /// Clear all Web API cache
+    pub fn clear_web_api_cache(&self) -> Result<(), std::io::Error> {
+        self.cache.clear_all()
+    }
 }
 
 /// User endpoints.
@@ -672,15 +709,30 @@ impl WebApi {
 
     // https://developer.spotify.com/documentation/web-api/reference/get-users-top-artists-and-tracks
     pub fn get_user_top_tracks(&self) -> Result<Vector<Arc<Track>>, Error> {
-        let request = &RequestBuilder::new("v1/me/top/tracks".to_string(), Method::Get, None)
-            .query("market", "from_token");
-        let result: Vector<Arc<Track>> = self.load_some_pages(request, 30)?;
+        // Try to get from cache first
+        if let Some(file) = self.cache.get("user-top-tracks", "user") {
+            if let Ok(cached_at) = file.metadata()?.modified() {
+                if let Ok(tracks) = serde_json::from_reader::<_, Vector<Arc<Track>>>(file) {
+                    return Ok(Cached::new(tracks, cached_at).data);
+                }
+            }
+        }
 
-        Ok(result)
+        let request = &RequestBuilder::new("v1/me/top/tracks", Method::Get, None)
+            .query("limit", "50")
+            .query("time_range", "short_term");
+        let tracks: Vector<Arc<Track>> = self.load_all_pages(request)?;
+
+        // Cache the result
+        if let Ok(json) = serde_json::to_vec(&tracks) {
+            self.cache.set("user-top-tracks", "user", &json);
+        }
+
+        Ok(tracks)
     }
 
     pub fn get_user_top_artist(&self) -> Result<Vector<Artist>, Error> {
-        #[derive(Clone, Data, Deserialize)]
+        #[derive(Clone, Data, Deserialize, Serialize)]
         struct Artists {
             artists: Artist,
         }
@@ -705,6 +757,15 @@ impl WebApi {
 
     // https://developer.spotify.com/documentation/web-api/reference/get-an-artists-albums/
     pub fn get_artist_albums(&self, id: &str) -> Result<ArtistAlbums, Error> {
+        // Try to get from cache first
+        if let Some(file) = self.cache.get("artist-albums", id) {
+            if let Ok(cached_at) = file.metadata()?.modified() {
+                if let Ok(albums) = serde_json::from_reader::<_, ArtistAlbums>(file) {
+                    return Ok(Cached::new(albums, cached_at).data);
+                }
+            }
+        }
+
         let request = &RequestBuilder::new(format!("v1/artists/{}/albums", id), Method::Get, None)
             .query("market", "from_token");
         let result: Vector<Arc<Album>> = self.load_all_pages(request)?;
@@ -745,11 +806,26 @@ impl WebApi {
                 AlbumType::AppearsOn => artist_albums.appears_on.push_back(album),
             }
         }
+
+        // Cache the result
+        if let Ok(json) = serde_json::to_vec(&artist_albums) {
+            self.cache.set("artist-albums", id, &json);
+        }
+
         Ok(artist_albums)
     }
 
     // https://developer.spotify.com/documentation/web-api/reference/get-an-artists-top-tracks
     pub fn get_artist_top_tracks(&self, id: &str) -> Result<Vector<Arc<Track>>, Error> {
+        // Try to get from cache first
+        if let Some(file) = self.cache.get("artist-top-tracks", id) {
+            if let Ok(cached_at) = file.metadata()?.modified() {
+                if let Ok(tracks) = serde_json::from_reader::<_, Vector<Arc<Track>>>(file) {
+                    return Ok(Cached::new(tracks, cached_at).data);
+                }
+            }
+        }
+
         #[derive(Deserialize)]
         struct Tracks {
             tracks: Vector<Arc<Track>>,
@@ -758,12 +834,18 @@ impl WebApi {
             &RequestBuilder::new(format!("v1/artists/{}/top-tracks", id), Method::Get, None)
                 .query("market", "from_token");
         let result: Tracks = self.load(request)?;
+
+        // Cache the result
+        if let Ok(json) = serde_json::to_vec(&result.tracks) {
+            self.cache.set("artist-top-tracks", id, &json);
+        }
+
         Ok(result.tracks)
     }
 
     // https://developer.spotify.com/documentation/web-api/reference/get-an-artists-related-artists
     pub fn get_related_artists(&self, id: &str) -> Result<Cached<Vector<Artist>>, Error> {
-        #[derive(Clone, Data, Deserialize)]
+        #[derive(Clone, Data, Deserialize, Serialize)]
         struct Artists {
             artists: Vector<Artist>,
         }
@@ -777,56 +859,56 @@ impl WebApi {
     }
 
     pub fn get_artist_info(&self, id: &str) -> Result<ArtistInfo, Error> {
-        #[derive(Clone, Data, Deserialize)]
+        #[derive(Clone, Data, Deserialize, Serialize)]
         pub struct Welcome {
             data: Data1,
         }
 
-        #[derive(Clone, Data, Deserialize)]
+        #[derive(Clone, Data, Deserialize, Serialize)]
         #[serde(rename_all = "camelCase")]
         pub struct Data1 {
             artist_union: ArtistUnion,
         }
 
-        #[derive(Clone, Data, Deserialize)]
+        #[derive(Clone, Data, Deserialize, Serialize)]
         pub struct ArtistUnion {
             profile: Profile,
             stats: Stats,
             visuals: Visuals,
         }
 
-        #[derive(Clone, Data, Deserialize)]
+        #[derive(Clone, Data, Deserialize, Serialize)]
         #[serde(rename_all = "camelCase")]
         pub struct Profile {
             biography: Biography,
             external_links: ExternalLinks,
         }
 
-        #[derive(Clone, Data, Deserialize)]
+        #[derive(Clone, Data, Deserialize, Serialize)]
         pub struct Biography {
             text: String,
         }
 
-        #[derive(Clone, Data, Deserialize)]
+        #[derive(Clone, Data, Deserialize, Serialize)]
         pub struct ExternalLinks {
             items: Vector<ExternalLinksItem>,
         }
 
-        #[derive(Clone, Data, Deserialize)]
+        #[derive(Clone, Data, Deserialize, Serialize)]
         #[serde(rename_all = "camelCase")]
         pub struct Visuals {
             avatar_image: AvatarImage,
         }
-        #[derive(Clone, Data, Deserialize)]
+        #[derive(Clone, Data, Deserialize, Serialize)]
         pub struct AvatarImage {
             sources: Vector<Image>,
         }
-        #[derive(Clone, Data, Deserialize)]
+        #[derive(Clone, Data, Deserialize, Serialize)]
         pub struct ExternalLinksItem {
             url: String,
         }
 
-        #[derive(Clone, Data, Deserialize)]
+        #[derive(Clone, Data, Deserialize, Serialize)]
         #[serde(rename_all = "camelCase")]
         pub struct Stats {
             followers: i64,
@@ -953,7 +1035,8 @@ impl WebApi {
     pub fn get_track(&self, id: &str) -> Result<Arc<Track>, Error> {
         let request = &RequestBuilder::new(format!("v1/tracks/{id}"), Method::Get, None)
             .query("market", "from_token");
-        self.load(request)
+        let result = self.load_cached(request, "track", id)?;
+        Ok(result.data)
     }
 
     pub fn get_track_credits(&self, track_id: &str) -> Result<TrackCredits, Error> {
@@ -1033,17 +1116,33 @@ impl WebApi {
 
     // https://developer.spotify.com/documentation/web-api/reference/get-users-saved-tracks/
     pub fn get_saved_tracks(&self) -> Result<Vector<Arc<Track>>, Error> {
+        // Try to get from cache first
+        if let Some(file) = self.cache.get("saved-tracks", "user") {
+            if let Ok(cached_at) = file.metadata()?.modified() {
+                if let Ok(tracks) = serde_json::from_reader::<_, Vector<Arc<Track>>>(file) {
+                    return Ok(Cached::new(tracks, cached_at).data);
+                }
+            }
+        }
+
         #[derive(Clone, Deserialize)]
         struct SavedTrack {
             track: Arc<Track>,
         }
         let request =
             &RequestBuilder::new("v1/me/tracks", Method::Get, None).query("market", "from_token");
-        Ok(self
+        let tracks: Vector<Arc<Track>> = self
             .load_all_pages(request)?
             .into_iter()
             .map(|item: SavedTrack| item.track)
-            .collect())
+            .collect();
+
+        // Cache the result
+        if let Ok(json) = serde_json::to_vec(&tracks) {
+            self.cache.set("saved-tracks", "user", &json);
+        }
+
+        Ok(tracks)
     }
 
     // https://developer.spotify.com/documentation/web-api/reference/get-users-saved-shows
@@ -1065,14 +1164,24 @@ impl WebApi {
 
     // https://developer.spotify.com/documentation/web-api/reference/save-tracks-user/
     pub fn save_track(&self, id: &str) -> Result<(), Error> {
-        let request = &RequestBuilder::new("v1/me/tracks", Method::Get, None).query("ids", id);
-        self.send_empty_json(request)
+        let request = &RequestBuilder::new("v1/me/tracks", Method::Put, None).query("ids", id);
+        self.send_empty_json(request)?;
+        
+        // Clear user cache after modification
+        self.clear_user_cache();
+        
+        Ok(())
     }
 
     // https://developer.spotify.com/documentation/web-api/reference/remove-tracks-user/
     pub fn unsave_track(&self, id: &str) -> Result<(), Error> {
-        let request = &RequestBuilder::new("v1/me/tracks", Method::Get, None).query("ids", id);
-        self.send_empty_json(request)
+        let request = &RequestBuilder::new("v1/me/tracks", Method::Delete, None).query("ids", id);
+        self.send_empty_json(request)?;
+        
+        // Clear user cache after modification
+        self.clear_user_cache();
+        
+        Ok(())
     }
 
     // https://developer.spotify.com/documentation/web-api/reference/save-shows-user
@@ -1221,9 +1330,24 @@ impl WebApi {
 impl WebApi {
     // https://developer.spotify.com/documentation/web-api/reference/get-a-list-of-current-users-playlists
     pub fn get_playlists(&self) -> Result<Vector<Playlist>, Error> {
+        // Try to get from cache first
+        if let Some(file) = self.cache.get("playlists", "user") {
+            if let Ok(cached_at) = file.metadata()?.modified() {
+                if let Ok(playlists) = serde_json::from_reader::<_, Vector<Playlist>>(file) {
+                    return Ok(Cached::new(playlists, cached_at).data);
+                }
+            }
+        }
+
         let request = &RequestBuilder::new("v1/me/playlists", Method::Get, None);
-        let result: Vector<Playlist> = self.load_all_pages(request)?;
-        Ok(result)
+        let playlists: Vector<Playlist> = self.load_all_pages(request)?;
+
+        // Cache the result
+        if let Ok(json) = serde_json::to_vec(&playlists) {
+            self.cache.set("playlists", "user", &json);
+        }
+
+        Ok(playlists)
     }
 
     pub fn follow_playlist(&self, id: &str) -> Result<(), Error> {
@@ -1247,8 +1371,8 @@ impl WebApi {
     // https://developer.spotify.com/documentation/web-api/reference/get-playlist
     pub fn get_playlist(&self, id: &str) -> Result<Playlist, Error> {
         let request = &RequestBuilder::new(format!("v1/playlists/{}", id), Method::Get, None);
-        let result: Playlist = self.load(request)?;
-        Ok(result)
+        let result = self.load_cached(request, "playlist", id)?;
+        Ok(result.data)
     }
 
     // https://developer.spotify.com/documentation/web-api/reference/get-playlists-tracks
@@ -1273,11 +1397,20 @@ impl WebApi {
                 .query("marker", "from_token")
                 .query("additional_types", "track");
 
+        // Try to get from cache first
+        if let Some(file) = self.cache.get("playlist-tracks", id) {
+            if let Ok(cached_at) = file.metadata()?.modified() {
+                if let Ok(tracks) = serde_json::from_reader::<_, Vector<Arc<Track>>>(file) {
+                    return Ok(Cached::new(tracks, cached_at).data);
+                }
+            }
+        }
+
         let result: Vector<PlaylistItem> = self.load_all_pages(request)?;
 
         let local_track_manager = self.local_track_manager.lock();
 
-        Ok(result
+        let tracks: Vector<Arc<Track>> = result
             .into_iter()
             .enumerate()
             .filter_map(|(index, item)| {
@@ -1288,7 +1421,14 @@ impl WebApi {
                 Arc::make_mut(&mut track).track_pos = index;
                 Some(track)
             })
-            .collect())
+            .collect();
+
+        // Cache the result
+        if let Ok(json) = serde_json::to_vec(&tracks) {
+            self.cache.set("playlist-tracks", id, &json);
+        }
+
+        Ok(tracks)
     }
 
     pub fn change_playlist_details(&self, id: &str, name: &str) -> Result<(), Error> {
@@ -1307,7 +1447,12 @@ impl WebApi {
             None,
         )
         .query("uris", track_uri);
-        self.request(request).map(|_| ())
+        self.request(request).map(|_| ())?;
+        
+        // Clear playlist cache after modification
+        self.clear_playlist_cache(playlist_id);
+        
+        Ok(())
     }
 
     // https://developer.spotify.com/documentation/web-api/reference/remove-tracks-playlist
@@ -1322,7 +1467,12 @@ impl WebApi {
             None,
         )
         .set_body(Some(json!({ "positions": [track_pos] })));
-        self.request(request).map(|_| ())
+        self.request(request).map(|_| ())?;
+        
+        // Clear playlist cache after modification
+        self.clear_playlist_cache(playlist_id);
+        
+        Ok(())
     }
 }
 

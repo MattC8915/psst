@@ -134,7 +134,7 @@ impl<T> Range<T> {
     }
 }
 
-#[derive(Clone, Data, Deserialize, Lens)]
+#[derive(Clone, Data, Deserialize, Serialize, Lens)]
 pub struct Recommendations {
     #[serde(skip)]
     pub request: Arc<RecommendationsRequest>,
@@ -142,7 +142,7 @@ pub struct Recommendations {
     pub tracks: Vector<Arc<Track>>,
 }
 
-#[derive(Clone, Data, Deserialize, Lens)]
+#[derive(Clone, Data, Deserialize, Serialize, Lens)]
 pub struct RecommendationsSeed {
     #[serde(default)]
     pub after_filtering_size: usize,
@@ -156,7 +156,7 @@ pub struct RecommendationsSeed {
     pub _type: RecommendationsSeedType,
 }
 
-#[derive(Clone, Data, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Data, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum RecommendationsSeedType {
     Artist,

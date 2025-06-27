@@ -9,7 +9,7 @@ Contributions are welcome!
 
 [![Build](https://github.com/jpochyla/psst/actions/workflows/build.yml/badge.svg)](https://github.com/jpochyla/psst/actions)
 
-![Screenshot](./psst-gui/assets/screenshot.png)
+![Screenshot](psst-gui/assets/screenshot.png)
 
 ## Download
 

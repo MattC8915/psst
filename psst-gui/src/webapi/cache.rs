@@ -80,11 +80,135 @@ impl WebApiCache {
         }
     }
 
+    /// Get cache statistics including size and entry counts
+    pub fn get_stats(&self) -> CacheStats {
+        let mut total_size = 0u64;
+        let mut total_entries = 0u64;
+
+        if let Some(base) = &self.base {
+            if let Ok(entries) = fs::read_dir(base) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_file() {
+                        if let Ok(metadata) = fs::metadata(&path) {
+                            total_size += metadata.len();
+                            total_entries += 1;
+                        }
+                    } else if path.is_dir() {
+                        if let Ok(dir_entries) = fs::read_dir(path) {
+                            for dir_entry in dir_entries.flatten() {
+                                if let Ok(metadata) = fs::metadata(dir_entry.path()) {
+                                    total_size += metadata.len();
+                                    total_entries += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let image_cache_size = self.images.lock().len() as u64;
+
+        CacheStats {
+            total_size,
+            total_entries,
+            image_cache_entries: image_cache_size,
+        }
+    }
+
+    /// Clear all cache entries
+    pub fn clear_all(&self) -> Result<(), std::io::Error> {
+        if let Some(base) = &self.base {
+            if base.exists() {
+                fs::remove_dir_all(base)?;
+                mkdir_if_not_exists(base)?;
+            }
+        }
+        self.images.lock().clear();
+        Ok(())
+    }
+
+    /// Clear a specific bucket
+    pub fn clear_bucket(&self, bucket: &str) -> Result<(), std::io::Error> {
+        if let Some(bucket_path) = self.bucket(bucket) {
+            if bucket_path.exists() {
+                fs::remove_dir_all(bucket_path)?;
+                mkdir_if_not_exists(&self.bucket(bucket).unwrap())?;
+            }
+        }
+        Ok(())
+    }
+
     fn bucket(&self, bucket: &str) -> Option<PathBuf> {
         self.base.as_ref().map(|path| path.join(bucket))
     }
 
     fn key(&self, bucket: &str, key: &str) -> Option<PathBuf> {
         self.bucket(bucket).map(|path| path.join(key))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CacheStats {
+    pub total_size: u64,
+    pub total_entries: u64,
+    pub image_cache_entries: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_cache_basic_operations() {
+        let temp_dir = tempdir().unwrap();
+        let cache = WebApiCache::new(Some(temp_dir.path().to_path_buf()));
+
+        // Test setting and getting data
+        let test_data = b"test data";
+        cache.set("test-bucket", "test-key", test_data);
+
+        // Verify data was stored
+        let stats = cache.get_stats();
+        assert!(stats.total_entries > 0);
+        assert!(stats.total_size > 0);
+
+        // Test getting data
+        if let Some(file) = cache.get("test-bucket", "test-key") {
+            let mut content = Vec::new();
+            use std::io::Read;
+            file.take(100).read_to_end(&mut content).unwrap();
+            assert_eq!(content, test_data);
+        } else {
+            panic!("Failed to retrieve cached data");
+        }
+
+        // Test clearing bucket
+        cache.clear_bucket("test-bucket").unwrap();
+        let stats_after_clear = cache.get_stats();
+        assert_eq!(stats_after_clear.total_entries, 0);
+    }
+
+    #[test]
+    fn test_cache_clear_all() {
+        let temp_dir = tempdir().unwrap();
+        let cache = WebApiCache::new(Some(temp_dir.path().to_path_buf()));
+
+        // Add some test data
+        cache.set("bucket1", "key1", b"data1");
+        cache.set("bucket2", "key2", b"data2");
+
+        let stats = cache.get_stats();
+        assert!(stats.total_entries > 0);
+
+        // Clear all
+        cache.clear_all().unwrap();
+
+        let stats_after_clear = cache.get_stats();
+        assert_eq!(stats_after_clear.total_entries, 0);
+        assert_eq!(stats_after_clear.total_size, 0);
     }
 }

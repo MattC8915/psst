@@ -11,7 +11,7 @@ pub struct AlbumDetail {
     pub album: Promise<Cached<Arc<Album>>, AlbumLink>,
 }
 
-#[derive(Clone, Data, Lens, Deserialize)]
+#[derive(Clone, Data, Lens, serde::Deserialize, serde::Serialize)]
 pub struct Album {
     pub id: Arc<str>,
     pub name: Arc<str>,
@@ -29,6 +29,7 @@ pub struct Album {
     #[serde(deserialize_with = "super::utils::deserialize_first_page")]
     pub tracks: Vector<Arc<Track>>,
     #[serde(deserialize_with = "super::utils::deserialize_date_option")]
+    #[serde(serialize_with = "super::utils::serialize_date_option")]
     #[data(same_fn = "PartialEq::eq")]
     pub release_date: Option<Date>,
     #[data(same_fn = "PartialEq::eq")]
@@ -109,7 +110,7 @@ impl AlbumLink {
     }
 }
 
-#[derive(Clone, Debug, Data, Eq, PartialEq, Hash, Deserialize)]
+#[derive(Clone, Debug, Data, Eq, PartialEq, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AlbumType {
     Album,
@@ -124,7 +125,7 @@ impl Default for AlbumType {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Data, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Data, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DatePrecision {
     Year,
@@ -132,14 +133,14 @@ pub enum DatePrecision {
     Day,
 }
 
-#[derive(Clone, Debug, Data, Lens, Deserialize)]
+#[derive(Clone, Debug, Data, Lens, Deserialize, Serialize)]
 pub struct Copyright {
     pub text: Arc<str>,
     #[serde(rename = "type")]
     pub kind: CopyrightType,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Data, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Data, Deserialize, Serialize)]
 pub enum CopyrightType {
     #[serde(rename = "C")]
     Copyright,

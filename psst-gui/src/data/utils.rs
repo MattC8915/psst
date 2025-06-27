@@ -8,7 +8,7 @@ use std::{
 use druid::{im::Vector, Data, Lens};
 use sanitize_html::rules::predefined::DEFAULT;
 use sanitize_html::sanitize_str;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use time::{Date, Month};
 
 #[derive(Clone, Data, Lens)]
@@ -78,7 +78,7 @@ pub fn default_str() -> Arc<str> {
     "".into()
 }
 
-#[derive(Copy, Clone, Default, Debug, Data, Deserialize)]
+#[derive(Copy, Clone, Default, Debug, Data, Deserialize, Serialize)]
 pub struct Float64(pub f64);
 
 impl PartialEq for Float64 {
@@ -132,6 +132,20 @@ where
     Ok(duration)
 }
 
+pub fn serialize_millis<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_u64(duration.as_millis() as u64)
+}
+
+pub fn serialize_secs<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_f64(duration.as_secs_f64())
+}
+
 pub fn deserialize_date<'de, D>(deserializer: D) -> Result<Date, D::Error>
 where
     D: Deserializer<'de>,
@@ -145,6 +159,25 @@ where
 
     Date::from_calendar_date(year, month, day)
         .map_err(|_err| serde::de::Error::custom("Invalid date"))
+}
+
+pub fn serialize_date<S>(date: &Date, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let date_str = date.format(time::macros::format_description!("[year]-[month]-[day]"))
+        .map_err(|_| serde::ser::Error::custom("Failed to format date"))?;
+    serializer.serialize_str(&date_str)
+}
+
+pub fn serialize_date_option<S>(date: &Option<Date>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match date {
+        Some(date) => serialize_date(date, serializer),
+        None => serializer.serialize_none(),
+    }
 }
 
 pub fn deserialize_date_option<'de, D>(deserializer: D) -> Result<Option<Date>, D::Error>

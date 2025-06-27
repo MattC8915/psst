@@ -799,7 +799,7 @@ fn cache_tab_widget() -> impl Widget<AppState> {
     col = col.with_spacer(theme::grid(3.0));
 
     col = col
-        .with_child(Label::new("Size").with_font(theme::UI_FONT_MEDIUM))
+        .with_child(Label::new("Core Cache Size").with_font(theme::UI_FONT_MEDIUM))
         .with_spacer(theme::grid(2.0))
         .with_child(Label::dynamic(
             |preferences: &Preferences, _| match preferences.cache_size {
@@ -812,12 +812,42 @@ fn cache_tab_widget() -> impl Widget<AppState> {
             },
         ));
 
-    // Clear cache button
+    col = col.with_spacer(theme::grid(3.0));
+
     col = col
+        .with_child(Label::new("Web API Cache").with_font(theme::UI_FONT_MEDIUM))
         .with_spacer(theme::grid(2.0))
-        .with_child(Button::new("Clear Cache").on_left_click(|ctx, _, _, _| {
-            ctx.submit_command(CLEAR_CACHE);
+        .with_child(Label::dynamic(|_, _| {
+            let stats = crate::webapi::WebApi::global().get_cache_stats();
+            format!(
+                "Size: {:.2} MB | Entries: {} | Images in memory: {}",
+                stats.total_size as f64 / 1e6_f64,
+                stats.total_entries,
+                stats.image_cache_entries
+            )
         }));
+
+    // Clear cache buttons
+    col = col
+        .with_spacer(theme::grid(3.0))
+        .with_child(
+            Flex::row()
+                .with_child(
+                    Button::new("Clear Core Cache")
+                        .on_left_click(|ctx, _, _, _| {
+                            ctx.submit_command(CLEAR_CACHE);
+                        })
+                )
+                .with_spacer(theme::grid(2.0))
+                .with_child(
+                    Button::new("Clear Web API Cache")
+                        .on_left_click(|_, _, _, _| {
+                            if let Err(err) = crate::webapi::WebApi::global().clear_web_api_cache() {
+                                log::error!("Failed to clear Web API cache: {}", err);
+                            }
+                        })
+                )
+        );
 
     col.controller(CacheController::new())
         .lens(AppState::preferences)

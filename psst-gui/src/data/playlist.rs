@@ -24,7 +24,7 @@ pub struct PlaylistRemoveTrack {
     pub track_pos: usize,
 }
 
-#[derive(Clone, Debug, Data, Lens, Deserialize)]
+#[derive(Clone, Debug, Data, Lens, Deserialize, Serialize)]
 pub struct Playlist {
     pub id: Arc<str>,
     pub name: Arc<str>,
@@ -58,7 +58,7 @@ impl Playlist {
     }
 }
 
-#[derive(Clone, Debug, Data, Lens)]
+#[derive(Clone, Debug, Data, Lens, Serialize)]
 pub struct PlaylistTracks {
     pub id: Arc<str>,
     pub name: Arc<str>,

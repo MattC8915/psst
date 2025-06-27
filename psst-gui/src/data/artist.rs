@@ -14,7 +14,7 @@ pub struct ArtistDetail {
     pub artist_info: Promise<ArtistInfo, ArtistLink>,
 }
 
-#[derive(Clone, Data, Lens, Deserialize)]
+#[derive(Clone, Data, Lens, Deserialize, Serialize)]
 pub struct Artist {
     pub id: Arc<str>,
     pub name: Arc<str>,
@@ -34,14 +34,15 @@ impl Artist {
     }
 }
 
-#[derive(Clone, Data, Lens)]
+#[derive(Clone, Data, Lens, Deserialize, Serialize)]
 pub struct ArtistAlbums {
     pub albums: Vector<Arc<Album>>,
     pub singles: Vector<Arc<Album>>,
     pub compilations: Vector<Arc<Album>>,
     pub appears_on: Vector<Arc<Album>>,
 }
-#[derive(Clone, Data, Lens)]
+
+#[derive(Clone, Data, Lens, Deserialize, Serialize)]
 pub struct ArtistInfo {
     pub main_image: Arc<str>,
     pub stats: ArtistStats,
@@ -49,14 +50,14 @@ pub struct ArtistInfo {
     pub artist_links: Vector<String>,
 }
 
-#[derive(Clone, Data, Lens)]
+#[derive(Clone, Data, Lens, Deserialize, Serialize)]
 pub struct ArtistStats {
     pub followers: String,
     pub monthly_listeners: String,
     pub world_rank: String,
 }
 
-#[derive(Clone, Data, Lens)]
+#[derive(Clone, Data, Lens, Deserialize, Serialize)]
 pub struct ArtistTracks {
     pub id: Arc<str>,
     pub name: Arc<str>,
