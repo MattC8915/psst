@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::{
-    data::{Nav, PlaybackPayload, QueueBehavior, QueueEntry},
+    data::{Nav, PlaybackPayload, QueueBehavior, QueueEntry, PlaylistLink, TrackId},
     ui::find::Find,
 };
 
@@ -71,6 +71,12 @@ pub const TOGGLE_SORT_ORDER: Selector = Selector::new("app.toggle-sort-order");
 // Track credits
 pub const SHOW_CREDITS_WINDOW: Selector<Arc<Track>> = Selector::new("app.credits-show-window");
 pub const LOAD_TRACK_CREDITS: Selector<Arc<Track>> = Selector::new("app.credits-load");
+
+// Track playlists
+pub const SHOW_TRACK_PLAYLISTS: Selector<Arc<Track>> = Selector::new("app.show-track-playlists");
+pub const LOAD_TRACK_PLAYLISTS: Selector<Arc<Track>> = Selector::new("app.load-track-playlists");
+pub const BUILD_TRACK_TO_PLAYLISTS_MAPPING: Selector = Selector::new("app.build-track-to-playlists-mapping");
+pub const REMOVE_TRACK_FROM_PLAYLIST: Selector<(PlaylistLink, TrackId)> = Selector::new("app.remove-track-from-playlist");
 
 // Artwork
 pub const SHOW_ARTWORK: Selector = Selector::new("app.show-artwork");

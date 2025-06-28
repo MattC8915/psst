@@ -1,4 +1,3 @@
-use gix_config::File;
 use std::{env, fs, io::Write};
 use time::OffsetDateTime;
 
@@ -10,11 +9,24 @@ fn main() {
     let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
     write!(fh, r#""{}""#, now).ok();
 
-    let git_config = File::from_git_dir("../.git/".into()).expect("Git Config not found!");
+    // Try to get Git remote URL, but provide fallback if Git is not available
+    let remote_url = match get_git_remote_url() {
+        Ok(url) => url,
+        Err(_) => String::from("https://github.com/jpochyla/psst"),
+    };
+
+    let outfile = format!("{}/remote-url.txt", outdir);
+    let mut file = fs::File::create(outfile).unwrap();
+    write!(file, r#""{}""#, remote_url).ok();
+}
+
+fn get_git_remote_url() -> Result<String, Box<dyn std::error::Error>> {
+    use gix_config::File;
+    
+    let git_config = File::from_git_dir("../.git/".into())?;
     // Get Git's 'Origin' URL
     let mut remote_url = git_config
-        .raw_value("remote.origin.url")
-        .expect("Couldn't extract origin url!")
+        .raw_value("remote.origin.url")?
         .to_string();
 
     // Check whether origin is accessed via ssh
@@ -36,8 +48,6 @@ fn main() {
     }
     let trimmed_url = remote_url.trim_end_matches(".git");
     remote_url.clone_from(&String::from(trimmed_url));
-
-    let outfile = format!("{}/remote-url.txt", outdir);
-    let mut file = fs::File::create(outfile).unwrap();
-    write!(file, r#""{}""#, remote_url).ok();
+    
+    Ok(remote_url)
 }

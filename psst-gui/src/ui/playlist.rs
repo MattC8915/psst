@@ -106,6 +106,7 @@ pub fn list_widget() -> impl Widget<AppState> {
                             }
                         });
                         l.playlists.update(((), Ok(playlists)));
+                        l.build_track_to_playlists_mapping();
                     }
                     Err(e) => {
                         l.playlists.update(((), Err(e)));
@@ -133,6 +134,7 @@ pub fn list_widget() -> impl Widget<AppState> {
                 data.error_alert(err);
             } else {
                 data.info_alert("Added to playlist.");
+                // Note: track-to-playlists mapping is not updated here to avoid blocking the UI
             }
         },
     )
@@ -193,6 +195,7 @@ pub fn list_widget() -> impl Widget<AppState> {
                 data.error_alert(err);
             } else {
                 data.info_alert("Removed from playlist.");
+                // Note: track-to-playlists mapping is not updated here to avoid blocking the UI
             }
         },
     )

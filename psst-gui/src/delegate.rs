@@ -5,10 +5,11 @@ use druid::{
 };
 use std::fs;
 use threadpool::ThreadPool;
+use std::sync::Arc;
 
 use crate::ui::playlist::{
-    RENAME_PLAYLIST, RENAME_PLAYLIST_CONFIRM, UNFOLLOW_PLAYLIST, UNFOLLOW_PLAYLIST_CONFIRM,
-    FAVORITE_PLAYLIST, UNFAVORITE_PLAYLIST,
+    FAVORITE_PLAYLIST, RENAME_PLAYLIST, RENAME_PLAYLIST_CONFIRM, UNFAVORITE_PLAYLIST,
+    UNFOLLOW_PLAYLIST, UNFOLLOW_PLAYLIST_CONFIRM,
 };
 use crate::ui::theme;
 use crate::ui::DOWNLOAD_ARTWORK;
@@ -19,6 +20,8 @@ use crate::{
     webapi::WebApi,
     widget::remote_image,
 };
+use crate::ui::{credits, preferences, track_playlists};
+use crate::data::Track;
 
 pub struct Delegate {
     main_window: Option<WindowId>,
@@ -129,6 +132,14 @@ impl Delegate {
     fn show_artwork(&mut self, ctx: &mut DelegateCtx) {
         Self::show_or_create_window(&mut self.artwork_window, ui::artwork_window, ctx);
     }
+
+    fn show_track_playlists(&mut self, ctx: &mut DelegateCtx, track: &Arc<Track>) {
+        let window = WindowDesc::new(track_playlists::widget(track.clone()))
+            .window_size((400.0, 300.0))
+            .title(format!("Playlists containing '{}'", track.name))
+            .resizable(true);
+        ctx.new_window(window);
+    }
 }
 
 impl AppDelegate<AppState> for Delegate {
@@ -210,6 +221,9 @@ impl AppDelegate<AppState> for Delegate {
             Handled::No
         } else if cmd.is(crate::cmd::SHOW_ARTWORK) {
             self.show_artwork(ctx);
+            Handled::Yes
+        } else if let Some(track) = cmd.get(cmd::SHOW_TRACK_PLAYLISTS) {
+            self.show_track_playlists(ctx, track);
             Handled::Yes
         } else if let Some((url, title)) = cmd.get(DOWNLOAD_ARTWORK) {
             let safe_title = title.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_");

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use druid::{
-    widget::{CrossAxisAlignment, Either, Flex, Label, LineBreaking, ViewSwitcher},
+    widget::{CrossAxisAlignment, Either, Flex, Label, LineBreaking, ViewSwitcher, Button},
     Env, Lens, LensExt, LocalizedString, Menu, MenuItem, Size, TextAlignment, Widget, WidgetExt,
 };
 use psst_core::{
@@ -14,7 +14,7 @@ use crate::{
     cmd,
     data::{
         AppState, Library, Nav, Playable, PlaybackOrigin, PlaylistAddTrack, PlaylistRemoveTrack,
-        QueueEntry, RecommendationsRequest, Track,
+        QueueEntry, RecommendationsRequest, Track, PlaylistLink,
     },
     ui::playlist,
     widget::{fill_between::FillBetween, icons, Empty, MyWidgetExt, RemoteImage},
@@ -170,6 +170,37 @@ pub fn playable_widget(track: &Track, display: Display) -> impl Widget<PlayRow<A
         },
     );
 
+    // Add playlist information section
+    let playlist_info = ViewSwitcher::new(
+        |row: &PlayRow<Arc<Track>>, _| {
+            // Only show if we have playlists loaded and this isn't in a playlist context
+            row.ctx.library.playlists.is_resolved() && 
+            !matches!(*row.origin, PlaybackOrigin::Playlist(_))
+        },
+        |should_show: &bool, _, _| {
+            if *should_show {
+                // Create a simple label that shows playlist count
+                Label::dynamic(|row: &PlayRow<Arc<Track>>, _| {
+                    let track_id = row.item.id.0.to_base62();
+                    if let Ok(playlist_ids) = crate::webapi::WebApi::global().find_playlists_containing_track(&track_id) {
+                        if !playlist_ids.is_empty() {
+                            format!("In {} playlist(s)", playlist_ids.len())
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        String::new()
+                    }
+                })
+                .with_text_size(theme::TEXT_SIZE_SMALL)
+                .with_text_color(theme::PLACEHOLDER_COLOR)
+                .boxed()
+            } else {
+                Box::new(Empty)
+            }
+        },
+    );
+
     main_row
         .with_flex_child(
             Flex::column()
@@ -177,6 +208,7 @@ pub fn playable_widget(track: &Track, display: Display) -> impl Widget<PlayRow<A
                 .with_child(major)
                 .with_spacer(2.0)
                 .with_child(minor)
+                .with_child(playlist_info)
                 .on_left_click(|ctx, _, row, _| {
                     ctx.submit_notification(cmd::PLAY.with(row.position))
                 }),
@@ -247,43 +279,24 @@ pub fn track_menu(
         let more_than_one_artist = track.artists.len() > 1;
         let title = if more_than_one_artist {
             LocalizedString::new("menu-item-show-artist-name")
-                .with_placeholder(format!("Go to Artist \"{}\"", artist_link.name))
+                .with_placeholder(format!("Show {}", artist_link.name))
         } else {
-            LocalizedString::new("menu-item-show-artist").with_placeholder("Go to Artist")
+            LocalizedString::new("menu-item-show-artist")
+                .with_placeholder("Show Artist")
         };
         menu = menu.entry(
-            MenuItem::new(title)
-                .command(cmd::NAVIGATE.with(Nav::ArtistDetail(artist_link.to_owned()))),
+            MenuItem::new(title).command(cmd::NAVIGATE.with(Nav::ArtistDetail(artist_link.clone()))),
         );
     }
 
-    if let Some(album_link) = track.album.as_ref() {
+    if let Some(album) = &track.album {
         menu = menu.entry(
             MenuItem::new(
-                LocalizedString::new("menu-item-show-album").with_placeholder("Go to Album"),
+                LocalizedString::new("menu-item-show-album").with_placeholder("Show Album"),
             )
-            .command(cmd::NAVIGATE.with(Nav::AlbumDetail(album_link.to_owned(), None))),
+            .command(cmd::NAVIGATE.with(Nav::AlbumDetail(album.clone(), None))),
         );
     }
-
-    menu = menu.entry(
-        MenuItem::new(
-            LocalizedString::new("menu-item-show-recommended")
-                .with_placeholder("Show Similar Tracks"),
-        )
-        .command(cmd::NAVIGATE.with(Nav::Recommendations(Arc::new(
-            RecommendationsRequest::for_track(track.id),
-        )))),
-    );
-
-    menu = menu.entry(
-        MenuItem::new(
-            LocalizedString::new("menu-item-show-credits").with_placeholder("Show Track Credits"),
-        )
-        .command(cmd::SHOW_CREDITS_WINDOW.with(track.clone())),
-    );
-
-    menu = menu.separator();
 
     menu = menu.entry(
         MenuItem::new(
@@ -292,23 +305,14 @@ pub fn track_menu(
         .command(cmd::COPY.with(track.url())),
     );
 
-    if library.contains_track(track) {
-        menu = menu.entry(
-            MenuItem::new(
-                LocalizedString::new("menu-item-remove-from-library")
-                    .with_placeholder("Remove Track from Library"),
-            )
-            .command(library::UNSAVE_TRACK.with(track.id)),
-        );
-    } else {
-        menu = menu.entry(
-            MenuItem::new(
-                LocalizedString::new("menu-item-save-to-library")
-                    .with_placeholder("Save Track to Library"),
-            )
-            .command(library::SAVE_TRACK.with(track.clone())),
-        );
-    }
+    // Add option to show playlists containing this track
+    menu = menu.entry(
+        MenuItem::new(
+            LocalizedString::new("menu-item-show-playlists")
+                .with_placeholder("Show Playlists Containing Track"),
+        )
+        .command(cmd::SHOW_TRACK_PLAYLISTS.with(track.clone())),
+    );
 
     if let PlaybackOrigin::Playlist(playlist) = origin {
         // Do some (hopefully) quick checks to determine if we should give the

@@ -46,6 +46,7 @@ pub mod search;
 pub mod show;
 pub mod theme;
 pub mod track;
+pub mod track_playlists;
 pub mod user;
 pub mod utils;
 

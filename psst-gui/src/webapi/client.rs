@@ -1353,15 +1353,19 @@ impl WebApi {
 impl WebApi {
     // https://developer.spotify.com/documentation/web-api/reference/get-a-list-of-current-users-playlists
     pub fn get_playlists(&self) -> Result<Vector<Playlist>, Error> {
+        log::info!("WebApi: get_playlists() called");
+        
         // Try to get from cache first
         if let Some(file) = self.cache.get("playlists", "user") {
             if let Ok(cached_at) = file.metadata()?.modified() {
                 if let Ok(playlists) = serde_json::from_reader::<_, Vector<Playlist>>(file) {
+                    log::info!("WebApi: get_playlists() returning cached data");
                     return Ok(Cached::new(playlists, cached_at).data);
                 }
             }
         }
 
+        log::info!("WebApi: get_playlists() making network request");
         let request = &RequestBuilder::new("v1/me/playlists", Method::Get, None);
         let playlists: Vector<Playlist> = self.load_all_pages(request)?;
 
@@ -1370,6 +1374,7 @@ impl WebApi {
             self.cache.set("playlists", "user", &json);
         }
 
+        log::info!("WebApi: get_playlists() completed, got {} playlists", playlists.len());
         Ok(playlists)
     }
 
@@ -1400,6 +1405,8 @@ impl WebApi {
 
     // https://developer.spotify.com/documentation/web-api/reference/get-playlists-tracks
     pub fn get_playlist_tracks(&self, id: &str) -> Result<Vector<Arc<Track>>, Error> {
+        log::info!("WebApi: get_playlist_tracks({}) called", id);
+        
         #[derive(Clone, Deserialize)]
         struct PlaylistItem {
             track: OptionalTrack,
@@ -1424,11 +1431,13 @@ impl WebApi {
         if let Some(file) = self.cache.get("playlist-tracks", id) {
             if let Ok(cached_at) = file.metadata()?.modified() {
                 if let Ok(tracks) = serde_json::from_reader::<_, Vector<Arc<Track>>>(file) {
+                    log::info!("WebApi: get_playlist_tracks({}) returning cached data", id);
                     return Ok(Cached::new(tracks, cached_at).data);
                 }
             }
         }
 
+        log::info!("WebApi: get_playlist_tracks({}) making network request", id);
         let result: Vector<PlaylistItem> = self.load_all_pages(request)?;
 
         let local_track_manager = self.local_track_manager.lock();
@@ -1451,6 +1460,7 @@ impl WebApi {
             self.cache.set("playlist-tracks", id, &json);
         }
 
+        log::info!("WebApi: get_playlist_tracks({}) completed, got {} tracks", id, tracks.len());
         Ok(tracks)
     }
 
@@ -1496,6 +1506,44 @@ impl WebApi {
         self.clear_playlist_cache(playlist_id);
         
         Ok(())
+    }
+
+    pub fn is_track_in_playlist(&self, playlist_id: &str, track_id: &str) -> Result<bool, Error> {
+        // Try to get from cache first
+        if let Some(file) = self.cache.get("playlist-tracks", playlist_id) {
+            if let Ok(cached_at) = file.metadata()?.modified() {
+                if let Ok(tracks) = serde_json::from_reader::<_, Vector<Arc<Track>>>(file) {
+                    return Ok(tracks.iter().any(|track| track.id.0.to_base62() == track_id));
+                }
+            }
+        }
+
+        // If not in cache, fetch the playlist tracks
+        let tracks = self.get_playlist_tracks(playlist_id)?;
+        Ok(tracks.iter().any(|track| track.id.0.to_base62() == track_id))
+    }
+
+    pub fn find_playlists_containing_track(&self, track_id: &str) -> Result<Vec<String>, Error> {
+        log::info!("WebApi: find_playlists_containing_track({}) called", track_id);
+        
+        // Get playlists from cache if available, otherwise fetch once
+        let playlists = self.get_playlists()?;
+        let mut containing_playlists = Vec::new();
+        
+        log::info!("WebApi: Checking {} playlists for track {}", playlists.len(), track_id);
+        
+        for playlist in playlists.iter() {
+            // Check if the track is actually in this playlist
+            if let Ok(is_in_playlist) = self.is_track_in_playlist(&playlist.id, track_id) {
+                if is_in_playlist {
+                    containing_playlists.push(playlist.id.to_string());
+                    log::info!("WebApi: Found track in playlist '{}'", playlist.name);
+                }
+            }
+        }
+        
+        log::info!("WebApi: find_playlists_containing_track({}) completed, found {} playlists", track_id, containing_playlists.len());
+        Ok(containing_playlists)
     }
 }
 

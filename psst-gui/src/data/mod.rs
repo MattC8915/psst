@@ -24,6 +24,8 @@ use std::{
         Arc,
     },
     time::{Duration, Instant},
+    collections::HashMap,
+    thread,
 };
 
 use druid::{
@@ -98,6 +100,8 @@ impl AppState {
             saved_tracks: Promise::Empty,
             saved_shows: Promise::Empty,
             playlists: Promise::Empty,
+            playlists_containing_current_track: Vector::new(),
+            track_to_playlists: HashMap::new(),
         });
         let common_ctx = Arc::new(CommonCtx {
             now_playing: None,
@@ -333,6 +337,23 @@ impl AppState {
         self.alerts
             .retain(|alert| now.duration_since(alert.created_at) < ALERT_DURATION);
     }
+
+    pub fn playlists_containing_track_promise(&self, track_id: TrackId) -> Promise<Vector<PlaylistLink>> {
+        // For now, return an empty promise since we're not maintaining the mapping
+        Promise::Empty
+    }
+
+    pub fn set_playlists_containing_track_loading(&mut self, _track_id: TrackId) {
+        // This would set the promise to loading state
+    }
+
+    pub fn set_playlists_containing_track_result(&mut self, _track_id: TrackId, _playlist_ids: Vec<String>) {
+        // This would set the promise to resolved state with the playlist links
+    }
+
+    pub fn set_playlists_containing_track_error(&mut self, _track_id: TrackId, _error: crate::error::Error) {
+        // This would set the promise to error state
+    }
 }
 
 #[derive(Clone, Data, Lens)]
@@ -342,6 +363,9 @@ pub struct Library {
     pub saved_albums: Promise<SavedAlbums>,
     pub saved_tracks: Promise<SavedTracks>,
     pub saved_shows: Promise<SavedShows>,
+    pub playlists_containing_current_track: Vector<PlaylistLink>,
+    #[data(ignore)]
+    pub track_to_playlists: HashMap<TrackId, Vector<PlaylistLink>>,
 }
 
 impl Library {
@@ -533,6 +557,80 @@ impl Library {
             self.playlists.update(((), Ok(updated_playlists)));
         }
     }
+
+    pub fn update_track_to_playlists(&mut self) {
+        // This method was causing hangs due to synchronous network requests
+        // For now, we'll leave the mapping empty and update it asynchronously when needed
+        log::info!("Library: update_track_to_playlists() called - skipping synchronous update");
+    }
+
+    pub fn playlists_containing_track(&self, track_id: &TrackId) -> Vector<PlaylistLink> {
+        self.track_to_playlists.get(track_id).cloned().unwrap_or_default()
+    }
+
+    pub fn playlists_containing_track_cached(&self, track_id: TrackId) -> Promise<Vector<PlaylistLink>> {
+        // Return the cached playlists for this track
+        if let Some(playlists) = self.track_to_playlists.get(&track_id) {
+            Promise::Resolved { def: (), val: playlists.clone() }
+        } else {
+            Promise::Empty
+        }
+    }
+
+    pub fn build_track_to_playlists_mapping(&mut self) {
+        if let Some(playlists) = self.playlists.resolved() {
+            let playlists = playlists.clone();
+            let mut map: HashMap<TrackId, Vector<PlaylistLink>> = HashMap::new();
+            // Spawn a thread to build the mapping
+            thread::spawn(move || {
+                let webapi = crate::webapi::WebApi::global();
+                for playlist in playlists.iter() {
+                    if let Ok(tracks) = webapi.get_playlist_tracks(&playlist.id) {
+                        for track in tracks {
+                            map.entry(track.id)
+                                .or_insert_with(Vector::new)
+                                .push_back(playlist.link());
+                        }
+                    }
+                }
+                // TODO: update the Library instance with the new map (requires cross-thread communication)
+                log::info!("Library: Finished building track-to-playlists mapping ({} tracks)", map.len());
+                // This is a placeholder: in a real app, use a channel or callback to update the UI thread
+            });
+        }
+    }
+
+    pub fn update_playlists_containing_track(&mut self, track_id: &TrackId) {
+        let containing_playlists = self.find_playlists_containing_track(track_id);
+        self.playlists_containing_current_track = containing_playlists.into_iter().collect();
+    }
+
+    pub fn find_playlists_containing_track(&self, track_id: &TrackId) -> Vec<PlaylistLink> {
+        let mut containing_playlists = Vec::new();
+        
+        if let Some(playlists) = self.playlists.resolved() {
+            let track_id_str = track_id.0.to_base62();
+            
+            for playlist in playlists.iter() {
+                // Check if this playlist is writable (user owns it or it's collaborative)
+                let is_writable = self.user_profile
+                    .resolved()
+                    .map(|user| playlist.owner.id == user.id)
+                    .unwrap_or(false) || playlist.collaborative;
+                
+                if is_writable {
+                    // Check if the track is actually in this playlist
+                    if let Ok(is_in_playlist) = crate::webapi::WebApi::global().is_track_in_playlist(&playlist.id, &track_id_str) {
+                        if is_in_playlist {
+                            containing_playlists.push(playlist.link());
+                        }
+                    }
+                }
+            }
+        }
+        
+        containing_playlists
+    }
 }
 
 impl Default for Library {
@@ -543,6 +641,8 @@ impl Default for Library {
             saved_albums: Promise::Empty,
             saved_tracks: Promise::Empty,
             saved_shows: Promise::Empty,
+            playlists_containing_current_track: Vector::new(),
+            track_to_playlists: HashMap::new(),
         }
     }
 }
