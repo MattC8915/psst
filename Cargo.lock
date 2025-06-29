@@ -3832,7 +3832,6 @@ dependencies = [
 name = "psst-cli"
 version = "0.1.0"
 dependencies = [
- "env_logger",
  "log",
  "psst-core",
 ]
@@ -3844,10 +3843,12 @@ dependencies = [
  "aes",
  "audio_thread_priority",
  "byteorder",
+ "chrono",
  "cpal",
  "crossbeam-channel",
  "ctr",
  "cubeb",
+ "env_logger",
  "git-version",
  "gix-config",
  "hmac",
@@ -3886,7 +3887,6 @@ dependencies = [
  "druid",
  "druid-enums",
  "druid-shell",
- "env_logger",
  "image 0.25.6",
  "infer",
  "itertools 0.14.0",

@@ -213,6 +213,12 @@ pub fn sanitize_html_string(text: &str) -> Arc<str> {
     Arc::from(sanitized.replace("&amp;", "&"))
 }
 
+/// Convert ISO 8601 datetime string to readable format
+/// Changes "2025-06-29T12:48:42Z" to "2025-06-29 12:48:42"
+pub fn format_datetime_readable(datetime_str: &str) -> String {
+    datetime_str.replace("T", " ").replace("Z", "")
+}
+
 #[derive(Clone, Debug, Data, Lens, Deserialize, Serialize)]
 pub struct PlaylistReference {
     pub id: Arc<str>,

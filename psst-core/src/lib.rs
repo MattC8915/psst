@@ -14,6 +14,7 @@ pub mod connection;
 pub mod error;
 pub mod item_id;
 pub mod lastfm;
+pub mod my_logger;
 pub mod metadata;
 pub mod oauth;
 pub mod player;

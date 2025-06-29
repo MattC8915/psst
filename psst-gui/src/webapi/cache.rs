@@ -50,7 +50,7 @@ impl WebApiCache {
         if let Some(path) = self.key("images", &format!("{:016x}", hash)) {
             if let Some(parent) = path.parent() {
                 let _ = std::fs::create_dir_all(parent);
-                log::info!("Creating dir path: {}", parent.display());
+                // log::info!("Creating dir path: {}", parent.display());
             }
             log::info!("Saving image to disk: {}", path.display());
             let _ = std::fs::write(path, data);

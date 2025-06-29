@@ -8,13 +8,15 @@ use psst_core::{
     connection::Credentials,
     error::Error,
     item_id::{ItemId, ItemIdType},
+    my_logger,
     player::{item::PlaybackItem, PlaybackConfig, Player, PlayerCommand, PlayerEvent},
     session::{SessionConfig, SessionService},
 };
 use std::{env, io, io::BufRead, path::PathBuf, thread};
 
 fn main() {
-    env_logger::init();
+    // Initialize centralized logging
+    my_logger::init_logging();
 
     let args: Vec<String> = env::args().collect();
     let track_id = args

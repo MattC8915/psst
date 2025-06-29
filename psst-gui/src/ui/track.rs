@@ -472,7 +472,7 @@ fn track_playlists_widget() -> impl Widget<PlayRow<Arc<Track>>> {
                     )
                     .with_default_spacer()
                     .with_child(
-                        druid::widget::Button::new("×")
+                        Button::new("×")
                             .on_click(move |ctx, playlist_ref: &mut Arc<PlaylistReference>, _env| {
                                 ctx.submit_command(crate::cmd::REMOVE_TRACK_FROM_PLAYLIST.with((
                                     playlist_ref.id.clone(),
