@@ -2333,7 +2333,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.4.10",
+ "socket2 0.5.9",
  "tokio",
  "tower-service",
  "tracing",
@@ -3905,6 +3905,8 @@ dependencies = [
  "serde",
  "serde_json",
  "souvlaki",
+ "tempfile",
+ "thousands",
  "threadpool",
  "time 0.3.41",
  "time-humanize",
@@ -5125,6 +5127,12 @@ dependencies = [
  "quote",
  "syn 2.0.101",
 ]
+
+[[package]]
+name = "thousands"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53792796c01cb3cc0a066a60839372eeb25a43bea02e51966af8b1ceaad0156e"
 
 [[package]]
 name = "thread_local"

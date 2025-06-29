@@ -7,6 +7,7 @@ use std::{
     thread,
     time::Duration,
 };
+use thousands::Separable;
 
 use druid::{
     im::Vector,
@@ -978,15 +979,15 @@ impl WebApi {
                     .to_string(),
             ),
             stats: ArtistStats {
-                followers: result.data.data.artist_union.stats.followers.to_string(),
+                followers: result.data.data.artist_union.stats.followers.separate_with_commas(),
                 monthly_listeners: result
                     .data
                     .data
                     .artist_union
                     .stats
                     .monthly_listeners
-                    .to_string(),
-                world_rank: result.data.data.artist_union.stats.world_rank.to_string(),
+                    .separate_with_commas(),
+                world_rank: result.data.data.artist_union.stats.world_rank.separate_with_commas(),
             },
             bio: {
                 let sanitized_bio = sanitize_str(
