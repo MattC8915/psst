@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use druid::{
-    widget::{CrossAxisAlignment, Either, Flex, Label, LineBreaking, ViewSwitcher},
-    Env, Lens, LensExt, LocalizedString, Menu, MenuItem, Size, TextAlignment, Widget, WidgetExt,
+    widget::{CrossAxisAlignment, Either, Flex, Label, LineBreaking, ViewSwitcher, List, Button, Controller},
+    Env, Lens, LensExt, LocalizedString, Menu, MenuItem, Size, TextAlignment, Widget, WidgetExt, Event,
 };
+use druid::im::Vector;
 use psst_core::{
     audio::normalize::NormalizationLevel,
     item_id::{ItemId, ItemIdType},
@@ -14,7 +15,7 @@ use crate::{
     cmd,
     data::{
         AppState, Library, Nav, Playable, PlaybackOrigin, PlaylistAddTrack, PlaylistRemoveTrack,
-        QueueEntry, RecommendationsRequest, Track,
+        QueueEntry, RecommendationsRequest, Track, PlaylistReference, CommonCtx,
     },
     ui::playlist,
     widget::{fill_between::FillBetween, icons, Empty, MyWidgetExt, RemoteImage},
@@ -26,6 +27,21 @@ use super::{
     theme,
     utils::{self, placeholder_widget},
 };
+
+// Controller to stop event propagation
+pub struct StopEventController;
+
+impl<T, W: Widget<T>> Controller<T, W> for StopEventController {
+    fn event(&mut self, child: &mut W, ctx: &mut druid::EventCtx, event: &Event, data: &mut T, env: &druid::Env) {
+        match event {
+            Event::MouseDown(_) | Event::MouseUp(_) => {
+                ctx.set_handled();
+            }
+            _ => {}
+        }
+        child.event(ctx, event, data, env);
+    }
+}
 
 #[derive(Copy, Clone)]
 pub struct Display {
@@ -177,6 +193,26 @@ pub fn playable_widget(track: &Track, display: Display) -> impl Widget<PlayRow<A
                 .with_child(major)
                 .with_spacer(2.0)
                 .with_child(minor)
+                .with_child(
+                    // Track playlists widget
+                    ViewSwitcher::new(
+                        |row: &PlayRow<Arc<Track>>, _| {
+                            row.ctx.track_playlists.is_some()
+                        },
+                        |has_playlists: &bool, _, _| {
+                            if *has_playlists {
+                                track_playlists_widget().boxed()
+                            } else {
+                                druid::widget::Button::new("Click to see playlists")
+                                    .on_click(move |ctx, row: &mut PlayRow<Arc<Track>>, _env| {
+                                        ctx.submit_command(crate::cmd::GET_PLAYLISTS_CONTAINING_TRACK.with(row.item.id.0.to_base62()));
+                                    })
+                                    .controller(StopEventController)
+                                    .boxed()
+                            }
+                        },
+                    )
+                ) 
                 .on_left_click(|ctx, _, row, _| {
                     ctx.submit_notification(cmd::PLAY.with(row.position))
                 }),
@@ -388,4 +424,66 @@ pub fn track_menu(
     menu = menu.entry(playlist_menu);
 
     menu
+}
+
+fn track_playlists_widget() -> impl Widget<PlayRow<Arc<Track>>> {
+    struct TrackPlaylistsLens;
+    
+    impl Lens<Arc<CommonCtx>, Vector<Arc<PlaylistReference>>> for TrackPlaylistsLens {
+        fn with<V, F>(&self, data: &Arc<CommonCtx>, f: F) -> V
+        where
+            F: FnOnce(&Vector<Arc<PlaylistReference>>) -> V,
+        {
+            let playlists = data.track_playlists.as_ref()
+                .map(|v| v.iter().map(|p| Arc::new(p.clone())).collect())
+                .unwrap_or_default();
+            f(&playlists)
+        }
+
+        fn with_mut<V, F>(&self, data: &mut Arc<CommonCtx>, f: F) -> V
+        where
+            F: FnOnce(&mut Vector<Arc<PlaylistReference>>) -> V,
+        {
+            let mut playlists = data.track_playlists.as_ref()
+                .map(|v| v.iter().map(|p| Arc::new(p.clone())).collect())
+                .unwrap_or_default();
+            let v = f(&mut playlists);
+            // Note: We can't easily update the original data here since it's in an Arc
+            // This is a limitation of the current design
+            v
+        }
+    }
+
+    Flex::column()
+        .with_child(
+            Label::new("Playlists containing this track:")
+                .with_font(theme::UI_FONT_MEDIUM)
+                .with_text_color(theme::PLACEHOLDER_COLOR)
+        )
+        .with_spacer(4.0)
+        .with_child(
+            List::new(|| {
+                Flex::row()
+                    .with_flex_child(
+                        Label::raw()
+                            .with_font(theme::UI_FONT_MEDIUM)
+                            .lens(PlaylistReference::name.in_arc()),
+                        1.0,
+                    )
+                    .with_default_spacer()
+                    .with_child(
+                        druid::widget::Button::new("×")
+                            .on_click(move |ctx, playlist_ref: &mut Arc<PlaylistReference>, _env| {
+                                ctx.submit_command(crate::cmd::REMOVE_TRACK_FROM_PLAYLIST.with((
+                                    playlist_ref.id.clone(),
+                                    playlist_ref.track_pos,
+                                )));
+                            })
+                            .controller(StopEventController)
+                    )
+                    .padding(theme::grid(0.5))
+                    .link()
+            })
+            .lens(PlayRow::ctx.then(TrackPlaylistsLens))
+        )
 }

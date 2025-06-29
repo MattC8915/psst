@@ -74,3 +74,8 @@ pub const LOAD_TRACK_CREDITS: Selector<Arc<Track>> = Selector::new("app.credits-
 
 // Artwork
 pub const SHOW_ARTWORK: Selector = Selector::new("app.show-artwork");
+
+// Song-to-playlist mapping
+pub const GET_PLAYLISTS_CONTAINING_TRACK: Selector<String> = Selector::new("app.get-playlists-containing-track");
+pub const REMOVE_TRACK_FROM_PLAYLIST_VIA_MAPPING: Selector<(String, String, usize)> = Selector::new("app.remove-track-from-playlist-via-mapping");
+pub const REMOVE_TRACK_FROM_PLAYLIST: Selector<(Arc<str>, usize)> = Selector::new("app.remove-track-from-playlist");

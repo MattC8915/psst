@@ -30,7 +30,7 @@ use ureq::{
 
 use crate::{
     data::{
-        self, utils::sanitize_html_string, Album, AlbumType, Artist, ArtistAlbums, ArtistInfo,
+        self, utils::{sanitize_html_string, PlaylistReference}, Album, AlbumType, Artist, ArtistAlbums, ArtistInfo,
         ArtistLink, ArtistStats, AudioAnalysis, Cached, Episode, EpisodeId, EpisodeLink, Image,
         MixedView, Nav, Page, Playlist, PublicUser, Range, Recommendations, RecommendationsRequest,
         SearchResults, SearchTopic, Show, SpotifyUrl, Track, TrackLines, UserProfile,
@@ -1476,6 +1476,11 @@ impl WebApi {
         // Clear playlist cache after modification
         self.clear_playlist_cache(playlist_id);
         
+        // Update track-to-playlist mapping in background
+        if let Some(track_id) = track_uri.split(':').last() {
+            let _ = self.update_track_playlist_mapping(playlist_id);
+        }
+        
         Ok(())
     }
 
@@ -1485,6 +1490,17 @@ impl WebApi {
         playlist_id: &str,
         track_pos: usize,
     ) -> Result<(), Error> {
+        // Get track ID before removing it
+        let track_id = if let Some(file) = self.cache.get("playlist-tracks", playlist_id) {
+            if let Ok(tracks) = serde_json::from_reader::<_, Vector<Arc<Track>>>(file) {
+                tracks.get(track_pos).map(|track| track.id.0.to_base62())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let request = &RequestBuilder::new(
             format!("v1/playlists/{}/tracks", playlist_id),
             Method::Delete,
@@ -1495,6 +1511,111 @@ impl WebApi {
         
         // Clear playlist cache after modification
         self.clear_playlist_cache(playlist_id);
+        
+        // Update track-to-playlist mapping in background
+        if let Some(track_id) = track_id {
+            let _ = self.remove_track_from_playlist_mapping(playlist_id, &track_id);
+        }
+        
+        Ok(())
+    }
+
+    /// Get all playlists that contain a specific track
+    pub fn get_playlists_containing_track(&self, track_id: &str) -> Result<Vector<PlaylistReference>, Error> {
+        // Try to get from cache first
+        if let Some(file) = self.cache.get("track-playlists", track_id) {
+            if let Ok(cached_at) = file.metadata()?.modified() {
+                if let Ok(playlists) = serde_json::from_reader::<_, Vector<PlaylistReference>>(file) {
+                    return Ok(Cached::new(playlists, cached_at).data);
+                }
+            }
+        }
+
+        // If not in cache, we need to build this mapping from existing playlist data
+        // This is done in the background and doesn't make new network requests
+        let playlists = self.build_track_playlist_mapping(track_id)?;
+        
+        // Cache the result
+        if let Ok(json) = serde_json::to_vec(&playlists) {
+            self.cache.set("track-playlists", track_id, &json);
+        }
+
+        Ok(playlists)
+    }
+
+    /// Build track-to-playlist mapping from cached playlist data
+    fn build_track_playlist_mapping(&self, track_id: &str) -> Result<Vector<PlaylistReference>, Error> {
+        let mut playlists = Vector::new();
+        
+        // Get all user playlists from cache
+        if let Some(file) = self.cache.get("playlists", "user") {
+            if let Ok(playlists_data) = serde_json::from_reader::<_, Vector<Playlist>>(file) {
+                for playlist in playlists_data {
+                    // Check if this playlist contains the track
+                    if let Some(file) = self.cache.get("playlist-tracks", &playlist.id) {
+                        if let Ok(tracks) = serde_json::from_reader::<_, Vector<Arc<Track>>>(file) {
+                            for (pos, track) in tracks.iter().enumerate() {
+                                if track.id.0.to_base62() == track_id {
+                                    playlists.push_back(PlaylistReference::new(
+                                        playlist.id.clone(),
+                                        playlist.name.clone(),
+                                        pos,
+                                    ));
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(playlists)
+    }
+
+    /// Update track-to-playlist mapping when a playlist is modified
+    pub fn update_track_playlist_mapping(&self, playlist_id: &str) -> Result<(), Error> {
+        // Get the playlist tracks
+        let tracks = self.get_playlist_tracks(playlist_id)?;
+        
+        // Update mapping for each track in the playlist
+        for (pos, track) in tracks.iter().enumerate() {
+            let track_id = track.id.0.to_base62();
+            let mut playlists = self.build_track_playlist_mapping(&track_id)?;
+            
+            // Remove old entry for this playlist if it exists
+            playlists.retain(|p| p.id != playlist_id.into());
+            
+            // Add new entry
+            if let Some(playlist) = self.get_playlist(playlist_id).ok() {
+                playlists.push_back(PlaylistReference::new(
+                    playlist.id.clone(),
+                    playlist.name.clone(),
+                    pos,
+                ));
+            }
+            
+            // Update cache
+            if let Ok(json) = serde_json::to_vec(&playlists) {
+                self.cache.set("track-playlists", &track_id, &json);
+            }
+        }
+        
+        Ok(())
+    }
+
+    /// Remove track from playlist mapping when track is removed
+    pub fn remove_track_from_playlist_mapping(&self, playlist_id: &str, track_id: &str) -> Result<(), Error> {
+        if let Some(file) = self.cache.get("track-playlists", track_id) {
+            if let Ok(mut playlists) = serde_json::from_reader::<_, Vector<PlaylistReference>>(file) {
+                playlists.retain(|p| p.id != playlist_id.into());
+                
+                // Update cache
+                if let Ok(json) = serde_json::to_vec(&playlists) {
+                    self.cache.set("track-playlists", track_id, &json);
+                }
+            }
+        }
         
         Ok(())
     }

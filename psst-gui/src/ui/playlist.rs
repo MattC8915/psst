@@ -217,6 +217,41 @@ pub fn list_widget() -> impl Widget<AppState> {
         // Refresh favorites every 30 minutes
         ctx.request_timer(std::time::Duration::from_secs(30 * 60));
     }))
+    .on_command_async(
+        crate::cmd::GET_PLAYLISTS_CONTAINING_TRACK,
+        |track_id| WebApi::global().get_playlists_containing_track(&track_id),
+        |_, _data, _track_id| {
+            // Store the result in a new field in AppState for display
+            _data.track_playlists.defer(());
+        },
+        |_, data, (_track_id, r)| {
+            match r {
+                Ok(playlists) => {
+                    data.track_playlists.update(((), Ok(playlists)));
+                }
+                Err(err) => {
+                    data.track_playlists.update(((), Err(err)));
+                }
+            }
+        },
+    )
+    .on_command_async(
+        crate::cmd::REMOVE_TRACK_FROM_PLAYLIST_VIA_MAPPING,
+        |(_track_id, playlist_id, track_pos)| {
+            WebApi::global().remove_track_from_playlist(&playlist_id, track_pos)
+        },
+        |_, _data, (_track_id, playlist_id, _)| {
+            // Update the track-to-playlist mapping
+            let _ = WebApi::global().remove_track_from_playlist_mapping(&playlist_id, &_track_id);
+        },
+        |_, data, (_, r)| {
+            if let Err(err) = r {
+                data.error_alert(err);
+            } else {
+                data.info_alert("Removed from playlist.");
+            }
+        },
+    )
 }
 
 fn unfollow_confirm_window(msg: UnfollowPlaylist) -> WindowDesc<AppState> {

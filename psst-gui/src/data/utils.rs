@@ -212,3 +212,20 @@ pub fn sanitize_html_string(text: &str) -> Arc<str> {
     let sanitized = sanitize_str(&DEFAULT, text).unwrap_or_default();
     Arc::from(sanitized.replace("&amp;", "&"))
 }
+
+#[derive(Clone, Debug, Data, Lens, Deserialize, Serialize)]
+pub struct PlaylistReference {
+    pub id: Arc<str>,
+    pub name: Arc<str>,
+    pub track_pos: usize,
+}
+
+impl PlaylistReference {
+    pub fn new(id: Arc<str>, name: Arc<str>, track_pos: usize) -> Self {
+        Self {
+            id,
+            name,
+            track_pos,
+        }
+    }
+}

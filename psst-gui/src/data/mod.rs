@@ -59,7 +59,7 @@ pub use crate::data::{
     slider_scroll_scale::SliderScrollScale,
     track::{AudioAnalysis, Track, TrackId, TrackLines},
     user::{PublicUser, UserProfile},
-    utils::{Cached, Float64, Image, Page},
+    utils::{Cached, Float64, Image, Page, PlaylistReference},
 };
 use crate::ui::credits::TrackCredits;
 
@@ -88,6 +88,7 @@ pub struct AppState {
     pub added_queue: Vector<QueueEntry>,
     pub lyrics: Promise<Vector<TrackLines>>,
     pub credits: Option<TrackCredits>,
+    pub track_playlists: Promise<Vector<PlaylistReference>>,
 }
 
 impl AppState {
@@ -104,6 +105,7 @@ impl AppState {
             library: Arc::clone(&library),
             show_track_cover: config.show_track_cover,
             nav: Nav::Home,
+            track_playlists: None,
         });
         let playback = Playback {
             state: PlaybackState::Stopped,
@@ -170,6 +172,7 @@ impl AppState {
             finder: Finder::new(),
             lyrics: Promise::Empty,
             credits: None,
+            track_playlists: Promise::Empty,
         }
     }
 }
@@ -586,12 +589,13 @@ impl SavedShows {
     }
 }
 
-#[derive(Clone, Data)]
+#[derive(Clone, Data, Lens)]
 pub struct CommonCtx {
     pub now_playing: Option<Playable>,
     pub library: Arc<Library>,
     pub show_track_cover: bool,
     pub nav: Nav,
+    pub track_playlists: Option<Vector<PlaylistReference>>,
 }
 
 impl CommonCtx {
